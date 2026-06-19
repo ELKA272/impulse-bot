@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>CRM — ИМПУЛЬС</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background: #f5f5f7;
+      color: #1d1d1f;
+      padding: 20px;
+    }
+    .container { max-width: 1200px; margin: 0 auto; }
+    h1 { font-size: 28px; margin-bottom: 4px; }
+    .subtitle { color: #86868b; margin-bottom: 24px; }
+
+    .stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(160px,1fr)); gap: 12px; margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #fff; border-radius: 12px; padding: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.06);
+    }
+    .stat-card .num { font-size: 32px; font-weight: 700; }
+    .stat-card .label { font-size: 13px; color: #86868b; margin-top: 4px; }
+
+    .tabs { display: flex; gap: 4px; margin-bottom: 16px; }
+    .tab {
+      padding: 8px 20px; border-radius: 20px; border: none; background: #e8e8ed;
+      cursor: pointer; font-size: 14px; font-weight: 500; transition: 0.2s;
+    }
+    .tab.active { background: #0071e3; color: #fff; }
+    .tab:hover:not(.active) { background: #dcdce0; }
+
+    .section { display: none; }
+    .section.active { display: block; }
+
+    table {
+      width: 100%; background: #fff; border-radius: 12px; overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.06); border-collapse: collapse;
+    }
+    th, td { padding: 10px 14px; text-align: left; font-size: 13px; }
+    th { background: #f5f5f7; font-weight: 600; color: #424245; font-size: 11px; text-transform: uppercase; letter-spacing: 0.5px; }
+    td { border-top: 1px solid #f0f0f2; }
+    tr:hover td { background: #fafafa; }
+    .status-active { color: #34c759; font-weight: 600; }
+    .status-cancelled { color: #ff3b30; font-weight: 600; }
+
+    .empty { text-align: center; padding: 40px; color: #86868b; }
+    .badge { background: #e8e8ed; padding: 2px 10px; border-radius: 10px; font-size: 11px; }
+
+    #refreshBtn {
+      padding: 6px 16px; border-radius: 20px; border: 1px solid #d2d2d7;
+      background: #fff; cursor: pointer; font-size: 13px; float: right;
+    }
+    #refreshBtn:hover { background: #f5f5f7; }
+    #refreshBtn:disabled { opacity: 0.5; }
+
+    .export-btn {
+      padding: 6px 16px; border-radius: 20px; border: 1px solid #d2d2d7;
+      background: #fff; cursor: pointer; font-size: 13px;
+    }
+    .export-btn:hover { background: #f5f5f7; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div style="display:flex;justify-content:space-between;align-items:center;">
+      <div>
+        <h1>🌸 ИМПУЛЬС — CRM</h1>
+        <p class="subtitle">Панель управления клубом</p>
+      </div>
+      <div style="display:flex;gap:8px;">
+        <button class="export-btn" onclick="exportCSV()">📥 CSV</button>
+        <button id="refreshBtn" onclick="loadData()">🔄 Обновить</button>
+      </div>
+    </div>
+
+    <div class="stats" id="stats"></div>
+
+    <div class="tabs">
+      <button class="tab active" onclick="switchTab('users',this)">👥 Подписчики</button>
+      <button class="tab" onclick="switchTab('regs',this)">📋 Регистрации</button>
+      <button class="tab" onclick="switchTab('events',this)">📅 Мероприятия</button>
+    </div>
+
+    <div class="section active" id="tab-users"></div>
+    <div class="section" id="tab-regs"></div>
+    <div class="section" id="tab-events"></div>
+  </div>
+
+  <script>
+    let data = { users: {}, regs: [], events: {} };
+
+    async function loadData() {
+      const btn = document.getElementById('refreshBtn');
+      btn.disabled = true; btn.textContent = '⏳';
+
+      try {
+        const base = window.location.origin;
+        const [usersR, regsR, eventsR] = await Promise.all([
+          fetch(base + '/api/users').then(r => r.json()).catch(() => ({})),
+          fetch(base + '/api/regs').then(r => r.json()).catch(() => []),
+          fetch(base + '/api/events').then(r => r.json()).catch(() => ({})),
+        ]);
+        data = { users: usersR, regs: regsR, events: eventsR };
+        render();
+      } catch(e) {
+        alert('Ошибка загрузки данных. Убедитесь, что файлы доступны:\n' +
+              'users.json, registrations.json, events.json');
+      }
+      btn.disabled = false; btn.textContent = '🔄 Обновить';
+    }
+
+    function render() {
+      renderStats();
+      renderUsers();
+      renderRegs();
+      renderEvents();
+    }
+
+    function renderStats() {
+      const users = Object.values(data.users);
+      const regs = data.regs;
+      const activeRegs = regs.filter(r => r.status === 'active');
+      const withPhone = users.filter(u => u.phone);
+      const totalPeople = activeRegs.reduce((s, r) => s + (r.count || 1), 0);
+
+      document.getElementById('stats').innerHTML = `
+        <div class="stat-card"><div class="num">${users.length}</div><div class="label">👥 Подписчиков</div></div>
+        <div class="stat-card"><div class="num">${withPhone.length}</div><div class="label">📱 С телефоном</div></div>
+        <div class="stat-card"><div class="num">${activeRegs.length}</div><div class="label">✅ Активных регистраций</div></div>
+        <div class="stat-card"><div class="num">${totalPeople}</div><div class="label">👤 Участников</div></div>
+      `;
+    }
+
+    function renderUsers() {
+      const users = Object.values(data.users);
+      if (!users.length) {
+        document.getElementById('tab-users').innerHTML = '<div class="empty">Нет подписчиков</div>';
+        return;
+      }
+      let html = '<table><thead><tr><th>ID</th><th>Имя</th><th>Username</th><th>Телефон</th><th>Подписан</th><th>Дата</th></tr></thead><tbody>';
+      users.forEach((u, i) => {
+        html += `<tr>
+          <td>${i + 1}</td>
+          <td>${esc(u.first_name || '—')}</td>
+          <td>${u.username ? '@' + esc(u.username) : '—'}</td>
+          <td>${u.phone || '—'}</td>
+          <td>${u.subscribed ? '✅' : '❌'}</td>
+          <td>${fmtDate(u.subscribed_at)}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      document.getElementById('tab-users').innerHTML = html;
+    }
+
+    function renderRegs() {
+      const regs = data.regs;
+      if (!regs.length) {
+        document.getElementById('tab-regs').innerHTML = '<div class="empty">Нет регистраций</div>';
+        return;
+      }
+      const rev = [...regs].reverse();
+      let html = '<table><thead><tr><th>#</th><th>Мероприятие</th><th>Имя</th><th>Кол-во</th><th>Телефон</th><th>Статус</th><th>Дата</th></tr></thead><tbody>';
+      rev.forEach(r => {
+        const ev = Object.values(data.events).find(e => e.id === r.event_id);
+        html += `<tr>
+          <td>${r.id}</td>
+          <td>${ev ? esc(ev.title) : '—'}</td>
+          <td>${esc(r.name || '—')}</td>
+          <td>${r.count || 1}</td>
+          <td>${r.phone || '—'}</td>
+          <td class="${r.status === 'active' ? 'status-active' : 'status-cancelled'}">${r.status === 'active' ? '✅ Активно' : '❌ Отменено'}</td>
+          <td>${fmtDate(r.created_at)}</td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      document.getElementById('tab-regs').innerHTML = html;
+    }
+
+    function renderEvents() {
+      const events = Object.values(data.events);
+      if (!events.length) {
+        document.getElementById('tab-events').innerHTML = '<div class="empty">Нет мероприятий</div>';
+        return;
+      }
+      let html = '<table><thead><tr><th>Название</th><th>Дата</th><th>Время</th><th>Место</th><th>Цена</th><th>Статус</th></tr></thead><tbody>';
+      events.forEach(e => {
+        const regCount = data.regs.filter(r => r.event_id === e.id && r.status === 'active').length;
+        html += `<tr>
+          <td><b>${esc(e.title)}</b></td>
+          <td>${e.date}</td>
+          <td>${e.time}</td>
+          <td>${esc(e.location)}</td>
+          <td>${e.price}</td>
+          <td>${e.status === 'active' ? '✅ Активно' : '⏸ Пауза'} <span class="badge">${regCount} рег.</span></td>
+        </tr>`;
+      });
+      html += '</tbody></table>';
+      document.getElementById('tab-events').innerHTML = html;
+    }
+
+    function switchTab(name, btn) {
+      document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+      btn.classList.add('active');
+      document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+      document.getElementById('tab-' + name).classList.add('active');
+    }
+
+    function esc(s) { return String(s).replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;'); }
+    function fmtDate(d) { return d ? d.slice(0, 10) : '—'; }
+
+    function exportCSV() {
+      const regs = data.regs;
+      if (!regs.length) { alert('Нет данных для экспорта'); return; }
+      let csv = 'ID,Мероприятие,Имя,Кол-во,Телефон,Статус,Дата\n';
+      regs.forEach(r => {
+        const ev = Object.values(data.events).find(e => e.id === r.event_id);
+        csv += `${r.id},"${ev ? ev.title : ''}","${r.name || ''}",${r.count || 1},"${r.phone || ''}",${r.status},${r.created_at || ''}\n`;
+      });
+      const blob = new Blob(['\uFEFF' + csv], {type: 'text/csv;charset=utf-8;'});
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = 'impulse_registrations.csv';
+      link.click();
+    }
+
+    loadData();
+  </script>
+</body>
+</html>
