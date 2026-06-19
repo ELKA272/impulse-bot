@@ -566,57 +566,62 @@ def start_http():
 # ── Main ──
 def main():
     import asyncio
+    import signal
 
     # Sync events to file for CRM API
     jsave(EVENTS_FILE, DEFAULT_EVENTS)
-
-    app = Application.builder().token(BOT_TOKEN).build()
 
     # Start HTTP server in background
     t = threading.Thread(target=start_http, daemon=True)
     t.start()
 
-    app.add_handler(CommandHandler("setadmin", set_admin))
-    app.add_handler(CommandHandler("stats", stats_cmd))
-    app.add_handler(CommandHandler("broadcast", broadcast_cmd))
-    conv = ConversationHandler(
-        entry_points=[CommandHandler("start", start)],
-        states={
-            ST_PHONE_CHOICE: [
-                MessageHandler(filters.CONTACT, phone_contact),
-                MessageHandler(filters.TEXT & ~filters.COMMAND, phone_choice),
-            ],
-            ST_PHONE_MANUAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_manual)],
-            ST_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router)],
-            ST_EVENTS: [CallbackQueryHandler(event_callback)],
-            ST_EVENT: [CallbackQueryHandler(event_callback)],
-            ST_REG_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_name),
-                          CallbackQueryHandler(event_callback)],
-            ST_REG_COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_count)],
-            ST_REG_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_phone)],
-            ST_ADMIN_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_msg)],
-            ST_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast)],
-        },
-        fallbacks=[CommandHandler("cancel", cancel_all)],
-        per_message=False,
-        name="impulse",
-    )
-    app.add_handler(conv)
+    async def run():
+        app = Application.builder().token(BOT_TOKEN).build()
 
-    logger.info("🌸 Бот «Импульс» запущен!")
+        app.add_handler(CommandHandler("setadmin", set_admin))
+        app.add_handler(CommandHandler("stats", stats_cmd))
+        app.add_handler(CommandHandler("broadcast", broadcast_cmd))
+        conv = ConversationHandler(
+            entry_points=[CommandHandler("start", start)],
+            states={
+                ST_PHONE_CHOICE: [
+                    MessageHandler(filters.CONTACT, phone_contact),
+                    MessageHandler(filters.TEXT & ~filters.COMMAND, phone_choice),
+                ],
+                ST_PHONE_MANUAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_manual)],
+                ST_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router)],
+                ST_EVENTS: [CallbackQueryHandler(event_callback)],
+                ST_EVENT: [CallbackQueryHandler(event_callback)],
+                ST_REG_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_name),
+                              CallbackQueryHandler(event_callback)],
+                ST_REG_COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_count)],
+                ST_REG_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_phone)],
+                ST_ADMIN_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_msg)],
+                ST_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast)],
+            },
+            fallbacks=[CommandHandler("cancel", cancel_all)],
+            per_message=False,
+            name="impulse",
+        )
+        app.add_handler(conv)
 
-    # Manual polling loop (more reliable on Railway)
-    loop = asyncio.new_event_loop()
-    asyncio.set_event_loop(loop)
-    try:
-        loop.run_until_complete(app.initialize())
-        loop.run_until_complete(app.updater.start_polling())
-        logger.info("✅ Polling started, bot is running...")
-        loop.run_forever()
-    except KeyboardInterrupt:
-        pass
-    finally:
-        loop.run_until_complete(app.shutdown())
+        logger.info("🌸 Бот «Импульс» запущен!")
+
+        await app.initialize()
+        await app.updater.start_polling()
+        logger.info("✅ Бот работает 24/7")
+        # Block forever — keep bot alive
+        await asyncio.Event().wait()
+
+    while True:
+        try:
+            asyncio.run(run())
+        except asyncio.CancelledError:
+            break
+        except Exception as e:
+            logger.error(f"⚠️ Бот упал: {e}. Перезапуск через 5 секунд...")
+            import time
+            time.sleep(5)
 
 if __name__ == "__main__":
     main()
