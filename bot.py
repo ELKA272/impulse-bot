@@ -84,11 +84,7 @@ def get_users():
     return jload(USERS_FILE, {})
 
 def get_events():
-    e = jload(EVENTS_FILE, {})
-    if not e:
-        e = DEFAULT_EVENTS
-        jsave(EVENTS_FILE, e)
-    return e
+    return DEFAULT_EVENTS
 
 def get_regs():
     return jload(REGS_FILE, [])
@@ -569,6 +565,9 @@ def start_http():
 
 # ── Main ──
 def main():
+    # Sync events to file for CRM API
+    jsave(EVENTS_FILE, DEFAULT_EVENTS)
+
     app = Application.builder().token(BOT_TOKEN).build()
 
     # Start HTTP server in background
