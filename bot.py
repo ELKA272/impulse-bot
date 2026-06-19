@@ -565,6 +565,8 @@ def start_http():
 
 # ── Main ──
 def main():
+    import asyncio
+
     # Sync events to file for CRM API
     jsave(EVENTS_FILE, DEFAULT_EVENTS)
 
@@ -602,7 +604,19 @@ def main():
     app.add_handler(conv)
 
     logger.info("🌸 Бот «Импульс» запущен!")
-    app.run_polling(drop_pending_updates=True)
+
+    # Manual polling loop (more reliable on Railway)
+    loop = asyncio.new_event_loop()
+    asyncio.set_event_loop(loop)
+    try:
+        loop.run_until_complete(app.initialize())
+        loop.run_until_complete(app.updater.start_polling())
+        logger.info("✅ Polling started, bot is running...")
+        loop.run_forever()
+    except KeyboardInterrupt:
+        pass
+    finally:
+        loop.run_until_complete(app.shutdown())
 
 if __name__ == "__main__":
     main()
