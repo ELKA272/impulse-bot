@@ -500,16 +500,22 @@ async def set_admin(update: Update, ctx):
     global ADMIN_CHAT_ID
     ADMIN_CHAT_ID = update.effective_user.id
     await update.message.reply_text(
-        "✅ Ты администратор!\n\nКоманды:\n/stats — статистика\n/broadcast — рассылка\n\n"
+        "✅ Ты администратор!\n\n"
+        "Команды:\n"
+        "/stats — статистика\n"
+        "/users — список подписчиков\n"
+        "/export — скачать JSON с подписчиками\n"
+        "/regs — список регистраций\n"
+        "/broadcast — рассылка\n\n"
         "В меню появились кнопки 📊 и 📢",
         reply_markup=menu_admin_kb(),
     )
-
 # ── /stats ──
 async def stats_cmd(update: Update, ctx):
     if not is_admin(update.effective_user.id):
         return
     return await stats(update, ctx)
+
 
 # ── /broadcast ──
 async def broadcast_cmd(update: Update, ctx):
@@ -518,11 +524,73 @@ async def broadcast_cmd(update: Update, ctx):
     await update.message.reply_text("📢 Напиши текст для рассылки:", reply_markup=cancel_kb())
     return ST_BROADCAST
 
+
+# ── /users — список подписчиков ──
+async def users_cmd(update: Update, ctx):
+    if not is_admin(update.effective_user.id):
+        return
+    users = get_users()
+    if not users:
+        await update.message.reply_text("Нет подписчиков.")
+        return ST_MENU
+
+    lines = [f"👤 <b>Подписчики ({len(users)}):</b>"]
+    for i, (uid, u) in enumerate(sorted(users.items(), key=lambda x: x[1].get("subscribed_at", "")), 1):
+        name = u.get("first_name", "—")
+        phone = u.get("phone", "—")
+        date = u.get("subscribed_at", "—")[:10]
+        lines.append(f"{i}. <b>{name}</b> | 📞 {phone} | 🆔 {uid} | 📅 {date}")
+
+    chunks = [lines[i:i+30] for i in range(0, len(lines), 30)]
+    for chunk in chunks:
+        await update.message.reply_text("\n".join(chunk), parse_mode=ParseMode.HTML)
+    return ST_MENU
+
+
+# ── /export — скачать users.json ──
+async def export_cmd(update: Update, ctx):
+    if not is_admin(update.effective_user.id):
+        return
+    if USERS_FILE.exists():
+        await update.message.reply_document(
+            document=open(USERS_FILE, "rb"),
+            filename="users.json",
+            caption="📁 Экспорт подписчиков",
+        )
+    else:
+        await update.message.reply_text("Файл не найден.")
+    return ST_MENU
+
+
+# ── /regs — список регистраций ──
+async def regs_cmd(update: Update, ctx):
+    if not is_admin(update.effective_user.id):
+        return
+    regs = get_regs()
+    if not regs:
+        await update.message.reply_text("Нет регистраций.")
+        return ST_MENU
+
+    lines = [f"📅 <b>Регистрации ({len(regs)}):</b>"]
+    for i, r in enumerate(regs, 1):
+        status = "✅" if r.get("status") == "active" else "❌"
+        name = r.get("name", "—")
+        phone = r.get("phone", "—")
+        event = r.get("event_id", "—")
+        count = r.get("count", 1)
+        date = r.get("created_at", "—")[:10]
+        lines.append(f"{i}. {status} <b>{name}</b> | 📞 {phone} | 🆔 {r.get('user_id')} | 📅{event} | {count} чел. | {date}")
+
+    chunks = [lines[i:i+30] for i in range(0, len(lines), 30)]
+    for chunk in chunks:
+        await update.message.reply_text("\n".join(chunk), parse_mode=ParseMode.HTML)
+    return ST_MENU
+
+
 # ── Cancel fallback ──
 async def cancel_all(update: Update, ctx):
     await update.message.reply_text("❌", reply_markup=kb_for(update.effective_user.id))
     return ST_MENU
-
 # ── Main ──
 def main():
     jsave(EVENTS_FILE, DEFAULT_EVENTS)
@@ -532,6 +600,9 @@ def main():
     app.add_handler(CommandHandler("setadmin", set_admin))
     app.add_handler(CommandHandler("stats", stats_cmd))
     app.add_handler(CommandHandler("broadcast", broadcast_cmd))
+    app.add_handler(CommandHandler("users", users_cmd))
+    app.add_handler(CommandHandler("export", export_cmd))
+    app.add_handler(CommandHandler("regs", regs_cmd))
     conv = ConversationHandler(
         entry_points=[CommandHandler("start", start)],
         states={
