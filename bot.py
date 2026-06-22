@@ -1,7 +1,6 @@
 import json
 import os
 import logging
-import threading
 from datetime import datetime, date
 from pathlib import Path
 
@@ -12,11 +11,13 @@ from telegram.ext import (
     ConversationHandler, MessageHandler, filters,
 )
 
-logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO)
+logging.basicConfig(format="%(asctime)s - %(name)s - %(levelname)s - %(message)s", level=logging.INFO, force=True)
 logger = logging.getLogger(__name__)
 
 # ── Config ──
 BOT_TOKEN = os.environ.get("BOT_TOKEN", "8976558743:AAG1V6pz--7MHXS4muOrVJpC6dsOJ9o_oug")
+PORT = int(os.environ.get("PORT", 8080))
+RAILWAY_URL = os.environ.get("RAILWAY_URL", "https://worker-production-e868.up.railway.app")
 ADMIN_USERNAME = "@elena_impulse"
 BASE_DIR = Path(__file__).parent
 CONFIG_FILE = BASE_DIR / "admin_config.json"
@@ -522,106 +523,49 @@ async def cancel_all(update: Update, ctx):
     await update.message.reply_text("❌", reply_markup=kb_for(update.effective_user.id))
     return ST_MENU
 
-# ── HTTP Server (CRM + API) ──
-def start_http():
-    import http.server
-    import socketserver
-
-    PORT = int(os.environ.get("PORT", 8080))
-
-    class Handler(http.server.SimpleHTTPRequestHandler):
-        def __init__(self, *args, **kwargs):
-            super().__init__(*args, directory=str(BASE_DIR), **kwargs)
-
-        def do_GET(self):
-            if self.path == "/api/users":
-                self.send_json(BASE_DIR / "users.json")
-            elif self.path == "/api/regs":
-                self.send_json(BASE_DIR / "registrations.json")
-            elif self.path == "/api/events":
-                self.send_json(BASE_DIR / "events.json")
-            else:
-                super().do_GET()
-
-        def send_json(self, path):
-            self.send_response(200)
-            self.send_header("Content-Type", "application/json; charset=utf-8")
-            self.send_header("Access-Control-Allow-Origin", "*")
-            self.end_headers()
-            try:
-                self.wfile.write(path.read_bytes())
-            except:
-                self.wfile.write(b"{}")
-
-        def log_message(self, fmt, *args):
-            logger.info(f"HTTP: {args[0]} {args[1]}")
-
-    try:
-        httpd = socketserver.TCPServer(("0.0.0.0", PORT), Handler)
-        logger.info(f"📡 CRM сервер: http://0.0.0.0:{PORT}/crm.html")
-        httpd.serve_forever()
-    except Exception as e:
-        logger.error(f"HTTP server: {e}")
-
 # ── Main ──
 def main():
-    import asyncio
-    import signal
-
-    # Sync events to file for CRM API
     jsave(EVENTS_FILE, DEFAULT_EVENTS)
 
-    # Start HTTP server in background
-    t = threading.Thread(target=start_http, daemon=True)
-    t.start()
+    app = Application.builder().token(BOT_TOKEN).build()
 
-    async def run():
-        app = Application.builder().token(BOT_TOKEN).build()
+    app.add_handler(CommandHandler("setadmin", set_admin))
+    app.add_handler(CommandHandler("stats", stats_cmd))
+    app.add_handler(CommandHandler("broadcast", broadcast_cmd))
+    conv = ConversationHandler(
+        entry_points=[CommandHandler("start", start)],
+        states={
+            ST_PHONE_CHOICE: [
+                MessageHandler(filters.CONTACT, phone_contact),
+                MessageHandler(filters.TEXT & ~filters.COMMAND, phone_choice),
+            ],
+            ST_PHONE_MANUAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_manual)],
+            ST_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router)],
+            ST_EVENTS: [CallbackQueryHandler(event_callback)],
+            ST_EVENT: [CallbackQueryHandler(event_callback)],
+            ST_REG_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_name),
+                          CallbackQueryHandler(event_callback)],
+            ST_REG_COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_count)],
+            ST_REG_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_phone)],
+            ST_ADMIN_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_msg)],
+            ST_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast)],
+        },
+        fallbacks=[CommandHandler("cancel", cancel_all)],
+        per_message=False,
+        name="impulse",
+    )
+    app.add_handler(conv)
 
-        app.add_handler(CommandHandler("setadmin", set_admin))
-        app.add_handler(CommandHandler("stats", stats_cmd))
-        app.add_handler(CommandHandler("broadcast", broadcast_cmd))
-        conv = ConversationHandler(
-            entry_points=[CommandHandler("start", start)],
-            states={
-                ST_PHONE_CHOICE: [
-                    MessageHandler(filters.CONTACT, phone_contact),
-                    MessageHandler(filters.TEXT & ~filters.COMMAND, phone_choice),
-                ],
-                ST_PHONE_MANUAL: [MessageHandler(filters.TEXT & ~filters.COMMAND, phone_manual)],
-                ST_MENU: [MessageHandler(filters.TEXT & ~filters.COMMAND, menu_router)],
-                ST_EVENTS: [CallbackQueryHandler(event_callback)],
-                ST_EVENT: [CallbackQueryHandler(event_callback)],
-                ST_REG_NAME: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_name),
-                              CallbackQueryHandler(event_callback)],
-                ST_REG_COUNT: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_count)],
-                ST_REG_PHONE: [MessageHandler(filters.TEXT & ~filters.COMMAND, reg_phone)],
-                ST_ADMIN_MSG: [MessageHandler(filters.TEXT & ~filters.COMMAND, admin_msg)],
-                ST_BROADCAST: [MessageHandler(filters.TEXT & ~filters.COMMAND, broadcast)],
-            },
-            fallbacks=[CommandHandler("cancel", cancel_all)],
-            per_message=False,
-            name="impulse",
-        )
-        app.add_handler(conv)
+    logger.info("🌸 Бот «Импульс» запущен!")
 
-        logger.info("🌸 Бот «Импульс» запущен!")
+    app.run_webhook(
+        listen="0.0.0.0",
+        port=PORT,
+        url_path="/webhook",
+        webhook_url=f"{RAILWAY_URL}/webhook",
+        allowed_updates=["message", "callback_query"],
+    )
 
-        await app.initialize()
-        await app.updater.start_polling()
-        logger.info("✅ Бот работает 24/7")
-        # Block forever — keep bot alive
-        await asyncio.Event().wait()
-
-    while True:
-        try:
-            asyncio.run(run())
-        except asyncio.CancelledError:
-            break
-        except Exception as e:
-            logger.error(f"⚠️ Бот упал: {e}. Перезапуск через 5 секунд...")
-            import time
-            time.sleep(5)
 
 if __name__ == "__main__":
     main()
