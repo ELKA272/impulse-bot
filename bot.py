@@ -43,6 +43,7 @@ def save_admin(cid):
     jsave(CONFIG_FILE, {"admin_chat_id": cid})
 
 ADMIN_CHAT_ID = load_admin()
+ADMIN_ID_ENV = int(os.environ.get("ADMIN_ID", 0))
 
 # ── States ──
 (ST_MENU, ST_PHONE_CHOICE, ST_PHONE_MANUAL, ST_EVENTS, ST_EVENT,
@@ -118,7 +119,7 @@ def cancel_kb():
 
 # ── Helpers ──
 def is_admin(uid):
-    return ADMIN_CHAT_ID and uid == ADMIN_CHAT_ID
+    return uid == ADMIN_CHAT_ID or (ADMIN_ID_ENV and uid == ADMIN_ID_ENV)
 
 def kb_for(uid):
     return menu_admin_kb() if is_admin(uid) else menu_kb()
